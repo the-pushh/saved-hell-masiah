@@ -1,0 +1,24 @@
+services:
+  backend:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      DATA_DIR: /app/data
+      WHISPER_DEVICE: cpu
+
+  frontend:
+    image: node:20-alpine
+    working_dir: /app
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+    environment:
+      NEXT_PUBLIC_API_BASE: http://localhost:8000
+      NEXT_PUBLIC_WS_BASE: ws://localhost:8000
+    command: sh -c "npm install --silent && npm run dev"
+    depends_on:
+      - backend
