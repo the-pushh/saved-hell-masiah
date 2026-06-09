@@ -121,14 +121,16 @@ async def scrape_reels(playwright: Playwright, thread_url: str, data_dir: Path, 
             if reel is None:
                 break
             try:
-                clean = _clean_url(reel["url"])
-                await cap_page.goto(clean, wait_until="domcontentloaded", timeout=15_000)
-                caption = _extract_caption(await cap_page.content())
+                await cap_page.goto(reel["url"], wait_until="networkidle", timeout=20_000)
+                landed = cap_page.url
+                content = await cap_page.content()
+                caption = _extract_caption(content)
+                on_event({"type": "log", "msg": f"  cap {landed[:60]} → {'✓' if caption else f'✗ no og:desc (len={len(content)})'}"})
                 if caption:
                     reel["caption"] = caption
                     on_event({"type": "caption_update", "url": reel["url"], "caption": caption})
-            except Exception:
-                pass
+            except Exception as exc:
+                on_event({"type": "log", "msg": f"  cap err: {exc}"})
             finally:
                 caption_queue.task_done()
         await cap_page.close()
