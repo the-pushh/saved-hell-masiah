@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+httpx
+playwright
+python-dotenv
+faster-whisper
+yt-dlp

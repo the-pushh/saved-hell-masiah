@@ -1,0 +1,24 @@
+# Python
+.venv/
+vevn/
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Runtime data (sensitive — do NOT commit)
+data/
+session.json
+reels.json
+reel_links.txt
+reel_feed.html
+
+# Node
+frontend/node_modules/
+frontend/.next/
+
+# Env
+.env
+.env.local
+
+# macOS
+.DS_Store
