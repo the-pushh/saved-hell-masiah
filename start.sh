@@ -4,55 +4,75 @@ set -e
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 VENV="$ROOT/.venv"
 
-echo "▶ IG DM Scraper — local launcher"
-echo ""
+# ── colours ──────────────────────────────────────────────────────────────────
+DIM='\033[2m'
+BOLD='\033[1m'
+GREEN='\033[0;32m'
+RESET='\033[0m'
 
-# --- Python venv & backend deps ---
+log()  { printf "  ${DIM}%s${RESET}\n" "$1"; }
+ok()   { printf "  ${GREEN}✓${RESET}  %s\n" "$1"; }
+head() { printf "\n${BOLD}%s${RESET}\n" "$1"; }
+
+clear
+printf "${BOLD}  IG DM Scraper${RESET}  ${DIM}local · private${RESET}\n"
+printf "  ${DIM}────────────────────────────${RESET}\n\n"
+
+# ── python venv ───────────────────────────────────────────────────────────────
+head "Setup"
+
 if [ ! -d "$VENV" ]; then
-  echo "Creating Python virtual environment..."
+  log "Creating virtual environment..."
   python3 -m venv "$VENV"
 fi
-
 source "$VENV/bin/activate"
 
-echo "Installing Python dependencies..."
-pip install -q -r "$ROOT/requirements.txt"
+log "Checking Python dependencies..."
+pip install -q -r "$ROOT/requirements.txt" 2>/dev/null
+ok "Python ready"
 
-echo "Installing Playwright browser..."
-playwright install chromium
+log "Checking Playwright browser..."
+playwright install chromium 2>&1 | grep -E "^(Downloading|playwright)" | sed 's/^/     /' || true
+ok "Browser ready"
 
-# --- Migrate legacy data files to data/ ---
+# ── data dir + migration ──────────────────────────────────────────────────────
 mkdir -p "$ROOT/data"
 for f in session.json reels.json reel_links.txt; do
   if [ -f "$ROOT/$f" ] && [ ! -f "$ROOT/data/$f" ]; then
-    echo "Migrating $f → data/$f"
     mv "$ROOT/$f" "$ROOT/data/$f"
+    log "Migrated $f → data/"
   fi
 done
 
-# --- Frontend deps ---
+# ── node deps ─────────────────────────────────────────────────────────────────
 if [ ! -d "$ROOT/frontend/node_modules" ]; then
-  echo "Installing Node dependencies..."
+  log "Installing Node dependencies..."
   cd "$ROOT/frontend" && npm install --silent
+  ok "Node ready"
+else
+  ok "Node ready"
 fi
 
-# --- Launch both services ---
-echo ""
-echo "Starting backend on http://localhost:8000"
-echo "Starting frontend on http://localhost:3000"
-echo ""
-echo "Open http://localhost:3000 in your browser."
-echo "Press Ctrl+C to stop."
-echo ""
+# ── launch ────────────────────────────────────────────────────────────────────
+head "Starting"
 
 cd "$ROOT"
-
-uvicorn backend.main:app --host 127.0.0.1 --port 8000 &
+uvicorn backend.main:app --host 127.0.0.1 --port 8000 --log-level warning &
 BACKEND_PID=$!
 
-cd "$ROOT/frontend" && npm run dev &
+cd "$ROOT/frontend" && npm run dev 2>&1 | grep -v "^>" | grep -v "^$" &
 FRONTEND_PID=$!
 
-trap "kill $BACKEND_PID $FRONTEND_PID 2>/dev/null; echo ''; echo 'Stopped.'" INT TERM EXIT
+trap "kill $BACKEND_PID $FRONTEND_PID 2>/dev/null; printf '\n  Stopped.\n\n'" INT TERM EXIT
+
+# wait for Next.js ready signal
+while ! curl -s http://localhost:3000 > /dev/null 2>&1; do
+  sleep 0.5
+done
+
+printf "\n"
+printf "  ${GREEN}●${RESET}  ${BOLD}http://localhost:3000${RESET}\n"
+printf "\n"
+printf "  ${DIM}Press Ctrl+C to stop${RESET}\n\n"
 
 wait
