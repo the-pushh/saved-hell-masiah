@@ -19,7 +19,7 @@ echo "Installing Python dependencies..."
 pip install -q -r "$ROOT/requirements.txt"
 
 echo "Installing Playwright browser..."
-playwright install chromium --quiet
+playwright install chromium
 
 # --- Migrate legacy data files to data/ ---
 mkdir -p "$ROOT/data"
