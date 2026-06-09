@@ -1,15 +1,10 @@
 import asyncio
-import html as html_lib
 import json
-import re
 from pathlib import Path
+from urllib.parse import urlparse
 
 from playwright.async_api import async_playwright
-
-
-def _extract_caption(html: str) -> str | None:
-    m = re.search(r'<meta\s+property="og:description"\s+content="([^"]*)"', html)
-    return html_lib.unescape(m.group(1)) if m else None
+from backend.scraper import _extract_caption, _clean_url
 
 
 async def enrich_captions(data_dir: Path, on_event) -> None:
@@ -44,7 +39,7 @@ async def enrich_captions(data_dir: Path, on_event) -> None:
                 enriched += 1
                 continue
             try:
-                await page.goto(reel["url"], wait_until="domcontentloaded", timeout=15_000)
+                await page.goto(_clean_url(reel["url"]), wait_until="domcontentloaded", timeout=15_000)
                 caption = _extract_caption(await page.content())
                 if caption:
                     reel["caption"] = caption

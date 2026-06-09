@@ -1,15 +1,30 @@
+import asyncio
 import html as html_lib
 import json
 import re
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlparse
 
 from playwright.async_api import Playwright
 
 
+def _clean_url(url: str) -> str:
+    """Strip query params — IG serves different content with DM-specific params."""
+    p = urlparse(url)
+    return f"https://www.instagram.com{p.path}"
+
+
 def _extract_caption(html: str) -> str | None:
-    m = re.search(r'<meta\s+property="og:description"\s+content="([^"]*)"', html)
-    return html_lib.unescape(m.group(1)) if m else None
+    # Handle both attribute orderings Instagram uses
+    for pattern in [
+        r'<meta\s+property="og:description"\s+content="([^"]*)"',
+        r'<meta\s+content="([^"]*)"\s+property="og:description"',
+    ]:
+        m = re.search(pattern, html)
+        if m:
+            return html_lib.unescape(m.group(1))
+    return None
 
 
 def extract_reels_from_response(data: dict) -> list[dict]:
@@ -48,8 +63,7 @@ def extract_reels_from_response(data: dict) -> list[dict]:
         ts_ms = int(node.get("timestamp_ms") or node.get("timestamp") or 0)
         ts = (
             datetime.fromtimestamp(ts_ms / (1000 if ts_ms > 1e10 else 1)).strftime("%b %d, %Y %H:%M")
-            if ts_ms
-            else ""
+            if ts_ms else ""
         )
 
         reels.append({
@@ -96,12 +110,40 @@ async def scrape_reels(playwright: Playwright, thread_url: str, data_dir: Path, 
         storage_state=str(session_file),
         viewport={"width": 1280, "height": 900},
     )
+
+    # Caption worker: separate page, runs concurrently with scroll loop
+    caption_queue: asyncio.Queue = asyncio.Queue()
+
+    async def caption_worker() -> None:
+        cap_page = await context.new_page()
+        while True:
+            reel = await caption_queue.get()
+            if reel is None:
+                break
+            try:
+                clean = _clean_url(reel["url"])
+                await cap_page.goto(clean, wait_until="domcontentloaded", timeout=15_000)
+                caption = _extract_caption(await cap_page.content())
+                if caption:
+                    reel["caption"] = caption
+                    on_event({"type": "caption_update", "url": reel["url"], "caption": caption})
+            except Exception:
+                pass
+            finally:
+                caption_queue.task_done()
+        await cap_page.close()
+
+    worker = asyncio.create_task(caption_worker())
+
+    # Main page — DM thread scroll loop
     page = await context.new_page()
 
     on_event({"type": "log", "msg": "Navigating to thread..."})
     await page.goto(thread_url, wait_until="domcontentloaded", timeout=30_000)
 
     if "login" in page.url or "accounts" in page.url:
+        caption_queue.put_nowait(None)
+        await worker
         await browser.close()
         session_file.unlink(missing_ok=True)
         on_event({"type": "error", "msg": "Session expired — re-run to log in again."})
@@ -124,15 +166,15 @@ async def scrape_reels(playwright: Playwright, thread_url: str, data_dir: Path, 
                     seen_urls.add(r["url"])
                     all_reels.append(r)
                     on_event({"type": "reel", "data": r})
+                    caption_queue.put_nowait(r)  # hand off to worker immediately
         except Exception:
             pass
 
     page.on("response", on_response)
 
-    on_event({"type": "log", "msg": "Scrolling through thread to load all messages..."})
+    on_event({"type": "log", "msg": "Scrolling through thread..."})
     vp = page.viewport_size or {"width": 1280, "height": 900}
-    cx, cy = vp["width"] // 2, vp["height"] // 2
-    await page.mouse.click(cx, cy)
+    await page.mouse.click(vp["width"] // 2, vp["height"] // 2)
     await page.wait_for_timeout(500)
 
     no_change = 0
@@ -150,36 +192,22 @@ async def scrape_reels(playwright: Playwright, thread_url: str, data_dir: Path, 
             no_change = 0
             prev_count = len(all_reels)
 
-        on_event({"type": "log", "msg": f"{len(all_reels)} reels collected..."})
+        on_event({"type": "log", "msg": f"{len(all_reels)} reels found, {caption_queue.qsize()} captions pending..."})
 
-    # save + emit scrape-done before caption pass
+    on_event({"type": "log", "msg": f"Scroll done — waiting for {caption_queue.qsize()} remaining captions..."})
+
+    # Drain the caption queue before closing
+    await caption_queue.join()
+    caption_queue.put_nowait(None)  # stop worker
+    await worker
+    await browser.close()
+
     reels_path = data_dir / "reels.json"
     reels_path.write_text(json.dumps(all_reels, ensure_ascii=False, indent=2))
     (data_dir / "reel_links.txt").write_text("\n".join(r["url"] for r in all_reels))
-    on_event({"type": "log", "msg": f"✓ {len(all_reels)} reels saved — fetching captions..."})
 
-    # caption pass — reuse same browser context, now headless is irrelevant (already open)
-    page.remove_listener("response", on_response)
-    enriched = 0
-    for i, reel in enumerate(all_reels):
-        try:
-            await page.goto(reel["url"], wait_until="domcontentloaded", timeout=15_000)
-            caption = _extract_caption(await page.content())
-            if caption:
-                reel["caption"] = caption
-                enriched += 1
-                on_event({"type": "caption_update", "url": reel["url"], "caption": caption})
-        except Exception:
-            pass
-
-        if (i + 1) % 20 == 0:
-            reels_path.write_text(json.dumps(all_reels, ensure_ascii=False, indent=2))
-            on_event({"type": "log", "msg": f"  captions {i + 1}/{len(all_reels)} ({enriched} found)"})
-
-    await browser.close()
-
-    reels_path.write_text(json.dumps(all_reels, ensure_ascii=False, indent=2))
-    on_event({"type": "log", "msg": f"✓ Captions done — {enriched}/{len(all_reels)} found"})
+    enriched = sum(1 for r in all_reels if r.get("caption"))
+    on_event({"type": "log", "msg": f"✓ Done — {len(all_reels)} reels, {enriched} captions"})
     on_event({"type": "done", "stage": "scrape", "count": len(all_reels)})
 
     return all_reels
