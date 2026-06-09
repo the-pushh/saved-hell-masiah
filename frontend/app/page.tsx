@@ -8,7 +8,6 @@ import {
   fetchStatus,
   fetchReels,
   startScrape,
-  startCaptions,
   startTranscripts,
   openJobSocket,
   type Reel,
@@ -21,7 +20,7 @@ interface LogLine {
   kind: "info" | "success" | "error" | "reel";
 }
 
-type Status = "idle" | "scraping" | "captions" | "transcripts";
+type Status = "idle" | "scraping" | "transcripts";
 
 let _lineId = 0;
 function nextId() {
@@ -46,14 +45,9 @@ export default function Home() {
     ]);
   }, []);
 
-  // Load initial state from backend
   useEffect(() => {
-    fetchStatus().then((s) => {
-      setSessionExists(s.session_exists);
-    });
-    fetchReels().then((r) => {
-      if (r.length > 0) setReels(r);
-    });
+    fetchStatus().then((s) => setSessionExists(s.session_exists));
+    fetchReels().then((r) => { if (r.length > 0) setReels(r); });
   }, []);
 
   function connectJob(jobId: string, jobStatus: Status) {
@@ -83,9 +77,7 @@ export default function Home() {
         case "caption_update":
           if (event.url && event.caption !== undefined) {
             setReels((prev) =>
-              prev.map((r) =>
-                r.url === event.url ? { ...r, caption: event.caption! } : r
-              )
+              prev.map((r) => r.url === event.url ? { ...r, caption: event.caption! } : r)
             );
           }
           break;
@@ -102,16 +94,10 @@ export default function Home() {
           break;
 
         case "done":
-          addLog(
-            `✓ Done — ${event.stage} complete (${event.count ?? 0} items)`,
-            "success"
-          );
+          addLog(`✓ Done — ${event.count ?? 0} items`, "success");
           setStatus("idle");
           setSessionExists(true);
-          // Refresh full reels list to sync any enrichment
-          fetchReels().then((r) => {
-            if (r.length > 0) setReels(r);
-          });
+          fetchReels().then((r) => { if (r.length > 0) setReels(r); });
           break;
 
         case "error":
@@ -126,39 +112,21 @@ export default function Home() {
       setStatus("idle");
     };
 
-    ws.onclose = () => {
-      if (status !== "idle") setStatus("idle");
-    };
+    ws.onclose = () => { if (status !== "idle") setStatus("idle"); };
   }
 
   async function handleScrape() {
     if (!threadUrl.trim()) return;
-    addLog(`Starting scrape of thread…`);
+    addLog("Starting scrape + caption fetch…");
     const res = await startScrape(threadUrl.trim());
-    if (res.error) {
-      addLog(`✗ ${res.error}`, "error");
-      return;
-    }
+    if (res.error) { addLog(`✗ ${res.error}`, "error"); return; }
     connectJob(res.job_id!, "scraping");
-  }
-
-  async function handleCaptions() {
-    addLog("Starting caption enrichment…");
-    const res = await startCaptions();
-    if (res.error) {
-      addLog(`✗ ${res.error}`, "error");
-      return;
-    }
-    connectJob(res.job_id!, "captions");
   }
 
   async function handleTranscripts() {
     addLog("Starting audio transcript pipeline…");
     const res = await startTranscripts();
-    if (res.error) {
-      addLog(`✗ ${res.error}`, "error");
-      return;
-    }
+    if (res.error) { addLog(`✗ ${res.error}`, "error"); return; }
     connectJob(res.job_id!, "transcripts");
   }
 
@@ -168,7 +136,6 @@ export default function Home() {
         threadUrl={threadUrl}
         onThreadUrlChange={setThreadUrl}
         onScrape={handleScrape}
-        onCaptions={handleCaptions}
         onTranscripts={handleTranscripts}
         reelsCount={reelsCount}
         captionsCount={captionsCount}
@@ -177,7 +144,6 @@ export default function Home() {
       />
 
       <main className="flex-1 flex flex-col overflow-hidden">
-        {/* Top bar */}
         <header className="h-10 border-b border-border flex items-center px-4 gap-3 flex-shrink-0">
           <span className="text-muted text-xs">DM Reels</span>
           <span className="text-border">·</span>
@@ -199,9 +165,8 @@ export default function Home() {
 
 function StatusBadge({ status }: { status: Status }) {
   const map: Record<Status, { dot: string; label: string }> = {
-    idle: { dot: "bg-muted/40", label: "idle" },
-    scraping: { dot: "bg-accent animate-pulse", label: "scraping" },
-    captions: { dot: "bg-warn animate-pulse", label: "fetching captions" },
+    idle:        { dot: "bg-muted/40",            label: "idle" },
+    scraping:    { dot: "bg-accent animate-pulse", label: "scraping" },
     transcripts: { dot: "bg-success animate-pulse", label: "transcribing" },
   };
   const { dot, label } = map[status];

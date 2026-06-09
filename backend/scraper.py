@@ -1,8 +1,15 @@
+import html as html_lib
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 
 from playwright.async_api import Playwright
+
+
+def _extract_caption(html: str) -> str | None:
+    m = re.search(r'<meta\s+property="og:description"\s+content="([^"]*)"', html)
+    return html_lib.unescape(m.group(1)) if m else None
 
 
 def extract_reels_from_response(data: dict) -> list[dict]:
@@ -145,11 +152,34 @@ async def scrape_reels(playwright: Playwright, thread_url: str, data_dir: Path, 
 
         on_event({"type": "log", "msg": f"{len(all_reels)} reels collected..."})
 
+    # save + emit scrape-done before caption pass
+    reels_path = data_dir / "reels.json"
+    reels_path.write_text(json.dumps(all_reels, ensure_ascii=False, indent=2))
+    (data_dir / "reel_links.txt").write_text("\n".join(r["url"] for r in all_reels))
+    on_event({"type": "log", "msg": f"✓ {len(all_reels)} reels saved — fetching captions..."})
+
+    # caption pass — reuse same browser context, now headless is irrelevant (already open)
+    page.remove_listener("response", on_response)
+    enriched = 0
+    for i, reel in enumerate(all_reels):
+        try:
+            await page.goto(reel["url"], wait_until="domcontentloaded", timeout=15_000)
+            caption = _extract_caption(await page.content())
+            if caption:
+                reel["caption"] = caption
+                enriched += 1
+                on_event({"type": "caption_update", "url": reel["url"], "caption": caption})
+        except Exception:
+            pass
+
+        if (i + 1) % 20 == 0:
+            reels_path.write_text(json.dumps(all_reels, ensure_ascii=False, indent=2))
+            on_event({"type": "log", "msg": f"  captions {i + 1}/{len(all_reels)} ({enriched} found)"})
+
     await browser.close()
 
-    (data_dir / "reels.json").write_text(json.dumps(all_reels, ensure_ascii=False, indent=2))
-    (data_dir / "reel_links.txt").write_text("\n".join(r["url"] for r in all_reels))
-    on_event({"type": "log", "msg": "✓ Saved reels.json and reel_links.txt"})
+    reels_path.write_text(json.dumps(all_reels, ensure_ascii=False, indent=2))
+    on_event({"type": "log", "msg": f"✓ Captions done — {enriched}/{len(all_reels)} found"})
     on_event({"type": "done", "stage": "scrape", "count": len(all_reels)})
 
     return all_reels

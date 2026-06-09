@@ -4,11 +4,10 @@ interface Props {
   threadUrl: string;
   onThreadUrlChange: (v: string) => void;
   onScrape: () => void;
-  onCaptions: () => void;
   onTranscripts: () => void;
   reelsCount: number;
   captionsCount: number;
-  status: "idle" | "scraping" | "captions" | "transcripts";
+  status: "idle" | "scraping" | "transcripts";
   sessionExists: boolean;
 }
 
@@ -16,7 +15,6 @@ export default function ConfigPanel({
   threadUrl,
   onThreadUrlChange,
   onScrape,
-  onCaptions,
   onTranscripts,
   reelsCount,
   captionsCount,
@@ -93,34 +91,22 @@ export default function ConfigPanel({
           <label className="block text-muted text-xs font-medium mb-2 uppercase tracking-wider">
             Enrich
           </label>
-          <div className="space-y-2">
-            <button
-              onClick={onCaptions}
-              disabled={busy || reelsCount === 0}
-              className="w-full flex items-center justify-center gap-2 bg-surface-2 hover:bg-border disabled:opacity-40 disabled:cursor-not-allowed text-primary text-xs font-medium rounded px-3 py-2 border border-border transition-colors"
-            >
-              {status === "captions" ? (
-                <>
-                  <Spinner /> Fetching captions…
-                </>
-              ) : (
-                `Enrich Captions${reelsCount > 0 ? ` (${reelsCount})` : ""}`
-              )}
-            </button>
-            <button
-              onClick={onTranscripts}
-              disabled={busy || captionsCount === 0}
-              className="w-full flex items-center justify-center gap-2 bg-surface-2 hover:bg-border disabled:opacity-40 disabled:cursor-not-allowed text-primary text-xs font-medium rounded px-3 py-2 border border-border transition-colors"
-            >
-              {status === "transcripts" ? (
-                <>
-                  <Spinner /> Transcribing…
-                </>
-              ) : (
-                "Transcribe Audio"
-              )}
-            </button>
-          </div>
+          <button
+            onClick={onTranscripts}
+            disabled={busy || captionsCount === 0}
+            className="w-full flex items-center justify-center gap-2 bg-surface-2 hover:bg-border disabled:opacity-40 disabled:cursor-not-allowed text-primary text-xs font-medium rounded px-3 py-2 border border-border transition-colors"
+          >
+            {status === "transcripts" ? (
+              <>
+                <Spinner /> Transcribing…
+              </>
+            ) : (
+              "Transcribe Audio"
+            )}
+          </button>
+          <p className="text-muted/50 text-xs mt-2">
+            Captions fetched automatically after scrape
+          </p>
         </section>
 
         {/* Export */}
