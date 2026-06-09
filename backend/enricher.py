@@ -4,26 +4,12 @@ import json
 import re
 from pathlib import Path
 
-import httpx
-
-_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/131.0.0.0 Safari/537.36"
-    ),
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9",
-}
+from playwright.async_api import async_playwright
 
 
-def _load_cookies(session_path: Path) -> dict:
-    data = json.loads(session_path.read_text())
-    return {
-        c["name"]: c["value"]
-        for c in data.get("cookies", [])
-        if ".instagram.com" in c.get("domain", "")
-    }
+def _extract_caption(html: str) -> str | None:
+    m = re.search(r'<meta\s+property="og:description"\s+content="([^"]*)"', html)
+    return html_lib.unescape(m.group(1)) if m else None
 
 
 async def enrich_captions(data_dir: Path, on_event) -> None:
@@ -35,37 +21,45 @@ async def enrich_captions(data_dir: Path, on_event) -> None:
         return
 
     reels: list[dict] = json.loads(reels_path.read_text())
-    cookies = _load_cookies(session_path) if session_path.exists() else {}
     total = len(reels)
     pending = [r for r in reels if not r.get("caption")]
 
-    on_event({"type": "log", "msg": f"Fetching captions for {len(pending)} reels..."})
+    on_event({"type": "log", "msg": f"Fetching captions for {len(pending)}/{total} reels..."})
 
-    async with httpx.AsyncClient(
-        cookies=cookies,
-        headers=_HEADERS,
-        follow_redirects=True,
-        timeout=15,
-    ) as client:
+    if not pending:
+        on_event({"type": "done", "stage": "captions", "count": total})
+        return
+
+    async with async_playwright() as pw:
+        browser = await pw.chromium.launch(headless=True)
+        ctx_kwargs = (
+            {"storage_state": str(session_path)} if session_path.exists() else {}
+        )
+        context = await browser.new_context(**ctx_kwargs)
+        page = await context.new_page()
+
+        enriched = 0
         for i, reel in enumerate(reels):
             if reel.get("caption"):
+                enriched += 1
                 continue
             try:
-                resp = await client.get(reel["url"])
-                m = re.search(r'<meta\s+property="og:description"\s+content="([^"]*)"', resp.text)
-                if m:
-                    caption = html_lib.unescape(m.group(1))
+                await page.goto(reel["url"], wait_until="domcontentloaded", timeout=15_000)
+                caption = _extract_caption(await page.content())
+                if caption:
                     reel["caption"] = caption
+                    enriched += 1
                     on_event({"type": "caption_update", "url": reel["url"], "caption": caption})
             except Exception as exc:
-                on_event({"type": "log", "msg": f"  ✗ caption fetch failed: {exc}"})
+                on_event({"type": "log", "msg": f"  ✗ {reel['url'][:60]}… {exc}"})
 
             if (i + 1) % 10 == 0:
                 reels_path.write_text(json.dumps(reels, ensure_ascii=False, indent=2))
-                on_event({"type": "log", "msg": f"  {i + 1}/{total} processed"})
+                on_event({"type": "log", "msg": f"  {i + 1}/{total} processed ({enriched} captions)"})
+
+        await browser.close()
 
     reels_path.write_text(json.dumps(reels, ensure_ascii=False, indent=2))
-    enriched = sum(1 for r in reels if r.get("caption"))
     on_event({"type": "log", "msg": f"✓ Captions done — {enriched}/{total} found"})
     on_event({"type": "done", "stage": "captions", "count": enriched})
 
