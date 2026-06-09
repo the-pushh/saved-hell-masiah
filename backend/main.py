@@ -17,6 +17,7 @@ DATA_DIR = Path(os.getenv("DATA_DIR", "data"))
 DATA_DIR.mkdir(exist_ok=True)
 
 WHISPER_DEVICE = os.getenv("WHISPER_DEVICE", "cpu")
+THREAD_URL_DEFAULT = os.getenv("THREAD_URL", "")
 
 app = FastAPI(title="IG DM Scraper")
 
@@ -115,7 +116,17 @@ async def get_status():
         "session_exists": (DATA_DIR / "session.json").exists(),
         "reels_count": count,
         "current_job": _current_job,
+        "default_thread_url": THREAD_URL_DEFAULT,
     }
+
+
+@app.delete("/api/session")
+async def clear_session():
+    """Delete session.json to force re-login on next scrape."""
+    session = DATA_DIR / "session.json"
+    if session.exists():
+        session.unlink()
+    return {"cleared": True}
 
 
 @app.get("/api/export/links")

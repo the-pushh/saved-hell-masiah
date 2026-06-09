@@ -10,6 +10,7 @@ import {
   startScrape,
   startCaptions,
   startTranscripts,
+  clearSession,
   openJobSocket,
   type Reel,
   type WsEvent,
@@ -47,8 +48,10 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    fetchStatus().then((s) => setSessionExists(s.session_exists));
-    fetchReels().then((r) => { if (r.length > 0) setReels(r); });
+    fetchStatus().then((s) => {
+      setSessionExists(s.session_exists);
+      if (s.default_thread_url) setThreadUrl(s.default_thread_url);
+    });
   }, []);
 
   function connectJob(jobId: string, jobStatus: Status) {
@@ -116,6 +119,12 @@ export default function Home() {
     ws.onclose = () => { if (status !== "idle") setStatus("idle"); };
   }
 
+  async function handleRelogin() {
+    await clearSession();
+    setSessionExists(false);
+    addLog("Session cleared — login window will open on next scrape.");
+  }
+
   async function handleScrape() {
     if (!threadUrl.trim()) return;
     addLog("Starting scrape + caption fetch…");
@@ -146,6 +155,7 @@ export default function Home() {
         onScrape={handleScrape}
         onCaptions={handleCaptions}
         onTranscripts={handleTranscripts}
+        onRelogin={handleRelogin}
         reelsCount={reelsCount}
         captionsCount={captionsCount}
         status={status}

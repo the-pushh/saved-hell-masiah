@@ -34,6 +34,11 @@ export interface StatusResponse {
   session_exists: boolean;
   reels_count: number;
   current_job: string | null;
+  default_thread_url: string;
+}
+
+export async function clearSession(): Promise<void> {
+  await fetch(`${API_BASE}/api/session`, { method: "DELETE" });
 }
 
 export async function fetchStatus(): Promise<StatusResponse> {

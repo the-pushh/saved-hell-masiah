@@ -6,6 +6,7 @@ interface Props {
   onScrape: () => void;
   onCaptions: () => void;
   onTranscripts: () => void;
+  onRelogin: () => void;
   reelsCount: number;
   captionsCount: number;
   status: "idle" | "scraping" | "captions" | "transcripts";
@@ -18,6 +19,7 @@ export default function ConfigPanel({
   onScrape,
   onCaptions,
   onTranscripts,
+  onRelogin,
   reelsCount,
   captionsCount,
   status,
@@ -40,16 +42,33 @@ export default function ConfigPanel({
 
       {/* Session status */}
       <div className="px-4 py-3 border-b border-border">
-        <div className="flex items-center gap-2">
-          <span
-            className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-              sessionExists ? "bg-success" : "bg-warn"
-            }`}
-          />
-          <span className="text-muted-2 text-xs">
-            {sessionExists ? "Session active" : "No session — login on first scrape"}
-          </span>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <span
+              className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                sessionExists ? "bg-success" : "bg-warn"
+              }`}
+            />
+            <span className="text-muted-2 text-xs truncate">
+              {sessionExists ? "Session active" : "No session — will login on scrape"}
+            </span>
+          </div>
+          {sessionExists && (
+            <button
+              onClick={onRelogin}
+              disabled={busy}
+              className="text-muted text-xs hover:text-error transition-colors disabled:opacity-40 flex-shrink-0"
+              title="Clear session and re-login"
+            >
+              re-login
+            </button>
+          )}
         </div>
+        {!sessionExists && (
+          <p className="text-warn text-xs mt-1.5">
+            A browser window will open for Instagram login when you click Scrape.
+          </p>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6">
