@@ -8,6 +8,7 @@ import {
   fetchStatus,
   fetchReels,
   startScrape,
+  startCaptions,
   startTranscripts,
   openJobSocket,
   type Reel,
@@ -20,7 +21,7 @@ interface LogLine {
   kind: "info" | "success" | "error" | "reel";
 }
 
-type Status = "idle" | "scraping" | "transcripts";
+type Status = "idle" | "scraping" | "captions" | "transcripts";
 
 let _lineId = 0;
 function nextId() {
@@ -123,6 +124,13 @@ export default function Home() {
     connectJob(res.job_id!, "scraping");
   }
 
+  async function handleCaptions() {
+    addLog("Fetching captions for existing reels…");
+    const res = await startCaptions();
+    if (res.error) { addLog(`✗ ${res.error}`, "error"); return; }
+    connectJob(res.job_id!, "captions");
+  }
+
   async function handleTranscripts() {
     addLog("Starting audio transcript pipeline…");
     const res = await startTranscripts();
@@ -136,6 +144,7 @@ export default function Home() {
         threadUrl={threadUrl}
         onThreadUrlChange={setThreadUrl}
         onScrape={handleScrape}
+        onCaptions={handleCaptions}
         onTranscripts={handleTranscripts}
         reelsCount={reelsCount}
         captionsCount={captionsCount}
@@ -165,8 +174,9 @@ export default function Home() {
 
 function StatusBadge({ status }: { status: Status }) {
   const map: Record<Status, { dot: string; label: string }> = {
-    idle:        { dot: "bg-muted/40",            label: "idle" },
-    scraping:    { dot: "bg-accent animate-pulse", label: "scraping" },
+    idle:        { dot: "bg-muted/40",             label: "idle" },
+    scraping:    { dot: "bg-accent animate-pulse",  label: "scraping" },
+    captions:    { dot: "bg-warn animate-pulse",    label: "fetching captions" },
     transcripts: { dot: "bg-success animate-pulse", label: "transcribing" },
   };
   const { dot, label } = map[status];
