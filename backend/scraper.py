@@ -1,6 +1,7 @@
 import asyncio
 import html as html_lib
 import json
+import random
 import re
 from datetime import datetime
 from pathlib import Path
@@ -13,6 +14,25 @@ def _clean_url(url: str) -> str:
     """Strip query params — IG serves different content with DM-specific params."""
     p = urlparse(url)
     return f"https://www.instagram.com{p.path}"
+
+
+def _caption_url(url: str) -> str:
+    """Return /p/{shortcode}/ — og:description is served reliably here for all post types."""
+    p = urlparse(url)
+    parts = [x for x in p.path.split("/") if x]
+    shortcode = parts[-1] if parts else ""
+    return f"https://www.instagram.com/p/{shortcode}/"
+
+
+def _extract_thumbnail(html: str) -> str:
+    for pattern in [
+        r'<meta\s+property="og:image"\s+content="([^"]*)"',
+        r'<meta\s+content="([^"]*)"\s+property="og:image"',
+    ]:
+        m = re.search(pattern, html)
+        if m:
+            return m.group(1)
+    return ""
 
 
 def _extract_caption(html: str) -> str | None:
@@ -72,6 +92,8 @@ def extract_reels_from_response(data: dict) -> list[dict]:
             "caption": "",
             "sender": sender,
             "timestamp": ts,
+            "source": "dm",
+            "source_label": "_DM_PLACEHOLDER_",  # filled in by caller
         })
 
     return reels
@@ -97,7 +119,7 @@ async def login_and_save_session(playwright: Playwright, data_dir: Path, on_even
     await browser.close()
 
 
-async def scrape_reels(playwright: Playwright, thread_url: str, data_dir: Path, on_event) -> list[dict]:
+async def scrape_reels(playwright: Playwright, thread_url: str, data_dir: Path, on_event, source_label: str = "DM") -> list[dict]:
     session_file = data_dir / "session.json"
     if not session_file.exists():
         await login_and_save_session(playwright, data_dir, on_event)
@@ -114,14 +136,17 @@ async def scrape_reels(playwright: Playwright, thread_url: str, data_dir: Path, 
     # Caption worker: separate page, runs concurrently with scroll loop
     caption_queue: asyncio.Queue = asyncio.Queue()
 
+    anon_context = await browser.new_context()
+
     async def caption_worker() -> None:
-        cap_page = await context.new_page()
+        cap_page = await anon_context.new_page()
         while True:
             reel = await caption_queue.get()
             if reel is None:
                 break
             try:
-                await cap_page.goto(reel["url"], wait_until="networkidle", timeout=20_000)
+                await asyncio.sleep(random.uniform(2.5, 4.5))
+                await cap_page.goto(_caption_url(reel["url"]), wait_until="domcontentloaded", timeout=15_000)
                 landed = cap_page.url
                 content = await cap_page.content()
                 caption = _extract_caption(content)
@@ -134,6 +159,7 @@ async def scrape_reels(playwright: Playwright, thread_url: str, data_dir: Path, 
             finally:
                 caption_queue.task_done()
         await cap_page.close()
+        await anon_context.close()
 
     worker = asyncio.create_task(caption_worker())
 
@@ -204,12 +230,10 @@ async def scrape_reels(playwright: Playwright, thread_url: str, data_dir: Path, 
     await worker
     await browser.close()
 
-    reels_path = data_dir / "reels.json"
-    reels_path.write_text(json.dumps(all_reels, ensure_ascii=False, indent=2))
-    (data_dir / "reel_links.txt").write_text("\n".join(r["url"] for r in all_reels))
+    for r in all_reels:
+        r["source_label"] = source_label
 
     enriched = sum(1 for r in all_reels if r.get("caption"))
-    on_event({"type": "log", "msg": f"✓ Done — {len(all_reels)} reels, {enriched} captions"})
-    on_event({"type": "done", "stage": "scrape", "count": len(all_reels)})
+    on_event({"type": "log", "msg": f"Thread done — {len(all_reels)} reels, {enriched} captions"})
 
     return all_reels

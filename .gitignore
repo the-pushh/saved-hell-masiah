@@ -22,3 +22,6 @@ frontend/.next/
 
 # macOS
 .DS_Store
+
+# Auto-installed binaries (ffmpeg, yt-dlp)
+.bin/

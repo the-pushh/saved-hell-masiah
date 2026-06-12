@@ -2,10 +2,48 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap");
+/* ── Light mode (default) ───────────────────────────────────────────── */
+:root,
+[data-theme="light"] {
+  --bg-base: 249 247 244;
+  --bg-surface: 255 255 255;
+  --bg-subtle: 243 241 237;
+  --border: 232 228 221;
+  --border-strong: 208 203 194;
+  --fg-primary: 26 24 20;
+  --fg-muted: 107 101 96;
+  --fg-subtle: 156 150 144;
+  --accent: 74 124 89;
+  --accent-dark: 61 107 75;
+  --accent-light: 232 242 235;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
+  --shadow-md: 0 4px 16px rgba(0,0,0,0.1);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.12);
+}
 
-* {
+/* ── Dark mode ──────────────────────────────────────────────────────── */
+[data-theme="dark"] {
+  --bg-base: 28 28 23;
+  --bg-surface: 36 36 32;
+  --bg-subtle: 46 46 40;
+  --border: 58 58 50;
+  --border-strong: 74 74 64;
+  --fg-primary: 240 237 230;
+  --fg-muted: 138 135 120;
+  --fg-subtle: 90 90 82;
+  --accent: 74 124 89;
+  --accent-dark: 61 107 75;
+  --accent-light: 26 53 36;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.3);
+  --shadow-md: 0 4px 16px rgba(0,0,0,0.4);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.5);
+}
+
+*,
+*::before,
+*::after {
   box-sizing: border-box;
+  transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease, fill 150ms ease, stroke 150ms ease, opacity 150ms ease;
 }
 
 html,
@@ -13,11 +51,13 @@ body {
   height: 100%;
   margin: 0;
   padding: 0;
-  background-color: #0a0a0a;
-  color: #ededed;
-  font-family: Inter, system-ui, -apple-system, sans-serif;
-  font-size: 13px;
+  background-color: transparent;
+  color: rgb(var(--fg-primary));
+  font-family: var(--font-inter), system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
+  transition: color 0.2s ease;
 }
 
 ::-webkit-scrollbar {
@@ -30,14 +70,45 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #2a2a2a;
+  background: rgb(var(--border-strong));
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #3a3a3a;
+  background: rgb(var(--fg-subtle));
 }
 
 ::selection {
-  background: #6366f133;
+  background: rgb(var(--accent-light));
+  color: rgb(var(--fg-primary));
+}
+
+/* ── Utility ────────────────────────────────────────────────────────── */
+.shadow-panel {
+  box-shadow: var(--shadow-md);
+}
+
+.shadow-modal {
+  box-shadow: var(--shadow-lg);
+}
+
+/* ── Glass panels ────────────────────────────────────────────────────── */
+.glass {
+  background-color: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+[data-theme="dark"] .glass {
+  background-color: rgba(18, 18, 14, 0.76);
+}
+
+.glass-surface {
+  background-color: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+[data-theme="dark"] .glass-surface {
+  background-color: rgba(28, 28, 23, 0.90);
 }

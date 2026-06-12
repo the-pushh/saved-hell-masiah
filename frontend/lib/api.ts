@@ -10,22 +10,52 @@ export interface Reel {
   sender: string;
   timestamp: string;
   transcript?: string;
+  video_path?: string;
+  image_paths?: string[];
+  post_type?: "video" | "image" | "carousel_image" | "carousel_video";
+  source?: "dm" | "saved";
+  source_label?: string;
+}
+
+export interface Source {
+  type: "dm" | "saved";
+  url?: string;       // for dm
+  username?: string;  // for saved
+  name?: string;      // user-defined tab label → becomes source_label in reels
+  fresh?: boolean;    // if true, purge existing reels for this source before scraping
+}
+
+export interface StoredSource {
+  type: "dm" | "saved";
+  url?: string;
+  username?: string;
+  name: string;       // always set (auto-generated if user left blank)
 }
 
 export interface WsEvent {
   type:
     | "log"
+    | "log_group_start"
+    | "log_group_end"
+    | "transcription_start"
+    | "transcription_progress"
     | "reel"
     | "caption_update"
     | "transcript_update"
+    | "reel_update"
     | "done"
     | "error";
   msg?: string;
+  label?: string;
+  success?: boolean;
+  current?: number;
+  total?: number;
   data?: Reel;
   url?: string;
   caption?: string;
   id?: string;
   transcript?: string;
+  media?: { video_path?: string; image_paths?: string[]; post_type?: string };
   stage?: "scrape" | "captions" | "transcripts";
   count?: number;
 }
@@ -51,11 +81,14 @@ export async function fetchReels(): Promise<Reel[]> {
   return r.json();
 }
 
-export async function startScrape(threadUrl: string): Promise<{ job_id?: string; error?: string }> {
+export async function startScrape(
+  sources: Source[],
+  downloadMedia = false
+): Promise<{ job_id?: string; error?: string }> {
   const r = await fetch(`${API_BASE}/api/scrape`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ thread_url: threadUrl }),
+    body: JSON.stringify({ sources, download_media: downloadMedia }),
   });
   return r.json();
 }
@@ -68,6 +101,61 @@ export async function startCaptions(): Promise<{ job_id?: string; error?: string
 export async function startTranscripts(): Promise<{ job_id?: string; error?: string }> {
   const r = await fetch(`${API_BASE}/api/enrich/transcripts`, { method: "POST" });
   return r.json();
+}
+
+export async function startDownloadAll(sourceLabel?: string): Promise<{ job_id?: string; error?: string }> {
+  const r = await fetch(`${API_BASE}/api/enrich/download-all`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ source_label: sourceLabel ?? null }),
+  });
+  return r.json();
+}
+
+export async function refetchCaption(
+  url: string
+): Promise<{ job_id?: string; error?: string }> {
+  const r = await fetch(`${API_BASE}/api/reel/caption`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url }),
+  });
+  return r.json();
+}
+
+export async function refetchTranscript(
+  url: string
+): Promise<{ job_id?: string; error?: string }> {
+  const r = await fetch(`${API_BASE}/api/reel/transcript`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url }),
+  });
+  return r.json();
+}
+
+export async function downloadVideo(
+  url: string
+): Promise<{ video_path?: string; image_paths?: string[]; post_type?: string; error?: string }> {
+  const r = await fetch(`${API_BASE}/api/reel/download`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url }),
+  });
+  return r.json();
+}
+
+export function videoUrl(reelId: string): string {
+  return `${API_BASE}/api/videos/${reelId}`;
+}
+
+export function mediaFileUrl(relativePath: string): string {
+  const clean = relativePath.replace(/^\//, "");
+  if (clean.startsWith("videos/")) {
+    const reelId = clean.slice("videos/".length).replace(/\.[^.]+$/, "");
+    return `${API_BASE}/api/videos/${reelId}`;
+  }
+  return `${API_BASE}/api/${clean}`;
 }
 
 export function openJobSocket(jobId: string): WebSocket {
